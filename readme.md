@@ -27,7 +27,7 @@ from pygrbl_streamer import GrblStreamer
 # Direct usage
 streamer = GrblStreamer('/dev/ttyUSB0')  # Or 'COM3' on Windows
 streamer.open()
-streamer.send_file('my_file.gcode')
+streamer.send_file('my_file.gcode') # or 'my_file.nc'
 streamer.close()
 ```
 
