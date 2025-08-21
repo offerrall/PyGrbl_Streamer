@@ -115,11 +115,10 @@ class GrblStreamer:
 
             except Exception as e:
                 if self.running:
-                    print(f"Error en lectura: {e}")
+                    print(f"Error in read loop: {e}")
                     
     def _process_line(self, line):
         if 'ALARM' in line:
-            print(f"  ⚠️ {line}")
             self.write_line("$X")
             try:
                 self.callback_queue.put_nowait(('alarm', line))
@@ -161,7 +160,6 @@ class GrblStreamer:
     def write_line(self, text):
         if not text.endswith('\n'):
             text += '\n'
-        print(f"  -> {text.strip()}")
         self.write(text)
 
     def read_line_blocking(self):
@@ -209,8 +207,6 @@ class GrblStreamer:
 
             if i % 10 == 0:
                 percent = int((i / len(commands)) * 100)
-                print(f"\r[{'='*int(percent/5):20s}] {percent}%", end='')
-                
                 try:
                     self.callback_queue.put_nowait(('progress', (percent, cmd)))
                 except queue.Full:
