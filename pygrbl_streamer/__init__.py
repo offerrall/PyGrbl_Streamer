@@ -216,6 +216,13 @@ class GrblStreamer:
             response = self.read_line_blocking()
             if response == 'ok' and sent_commands:
                 sent_commands.pop(0)
+        
+        for _ in range(100):
+            self.write_line("?")
+            response = self.read_line_blocking()
+            if response and '<Idle|' in response:
+                break
+            time.sleep(1)
                 
         try:
             self.callback_queue.put_nowait(('progress', (100, 'completed')))
