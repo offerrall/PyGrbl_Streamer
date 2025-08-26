@@ -214,7 +214,13 @@ class GrblStreamer:
                 except queue.Full:
                     pass
 
-        time.sleep(30)
+        while True:
+            self.write_line("?")
+            time.sleep(2)
+            response = self.read_line_blocking()
+            if response and 'Idle' in response:
+                break
+                
         self.progress_callback(100, 'completed')
 
     def close(self):
