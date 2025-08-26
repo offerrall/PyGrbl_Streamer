@@ -200,7 +200,7 @@ class GrblStreamer:
                     if sent_commands:
                         sent_cmd = sent_commands.pop(0)
                         grbl_buffer -= (len(sent_cmd) + 1)
-     
+    
             self.write_line(cmd)
             sent_commands.append(cmd)
             grbl_buffer += len(cmd) + 1
@@ -214,15 +214,8 @@ class GrblStreamer:
                 except queue.Full:
                     pass
 
-        while sent_commands:
-            response = self.read_line_blocking()
-            if response == 'ok' and sent_commands:
-                sent_commands.pop(0)
-                
-        try:
-            self.callback_queue.put_nowait(('progress', (100, 'completed')))
-        except queue.Full:
-            pass
+        time.sleep(30)
+        self.progress_callback(100, 'completed')
 
     def close(self):
         self.running = False
