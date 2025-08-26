@@ -206,9 +206,9 @@ class GrblStreamer:
             grbl_buffer += len(cmd) + 1
 
             if i % 10 == 0:
+                percent = int((i / len(commands)) * 100)
                 if percent == 100:
                     continue
-                percent = int((i / len(commands)) * 100)
                 try:
                     self.callback_queue.put_nowait(('progress', (percent, cmd)))
                 except queue.Full:
