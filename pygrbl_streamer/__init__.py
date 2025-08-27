@@ -168,9 +168,9 @@ class GrblStreamer:
         except queue.Empty:
             return None
 
-    def send_file(self, filename):
+    def send_file(self, file_path: str, completion_timeout: int = 300):
 
-        with open(filename, 'r') as f:
+        with open(file_path, 'r') as f:
             lines = f.readlines()
 
         commands = []
@@ -214,7 +214,11 @@ class GrblStreamer:
                 except queue.Full:
                     pass
 
+        start_time = time.time()
         while True:
+            if time.time() - start_time > completion_timeout:
+                break
+                
             self.write_line("?")
             time.sleep(2)
             response = self.read_line_blocking()
