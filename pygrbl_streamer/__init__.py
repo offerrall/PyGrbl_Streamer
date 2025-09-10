@@ -32,6 +32,14 @@ class GrblStreamer:
     def error_callback(self, line: str):
         """Callback for GRBL errors, overridden by user."""
         pass
+    
+    def send_callback(self, data: str):
+        """Callback for data sent to GRBL, overridden by user."""
+        pass
+        
+    def receive_callback(self, data: str):
+        """Callback for data received from GRBL, overridden by user."""
+        pass
 
     def open(self):
 
@@ -111,6 +119,12 @@ class GrblStreamer:
                     line = buffer.strip()
                     buffer = ""
                     if line:
+                        # Callback para datos recibidos
+                        try:
+                            self.callback_queue.put_nowait(('receive', line))
+                        except queue.Full:
+                            pass
+                        
                         self._process_line(line)
 
             except Exception as e:
@@ -145,6 +159,10 @@ class GrblStreamer:
                     self.alarm_callback(data)
                 elif event_type == 'error':
                     self.error_callback(data)
+                elif event_type == 'send':
+                    self.send_callback(data)
+                elif event_type == 'receive':
+                    self.receive_callback(data)
                     
             except queue.Empty:
                 continue
@@ -154,8 +172,18 @@ class GrblStreamer:
     def write(self, data):
         if self.serial and self.serial.is_open:
             if isinstance(data, str):
+                data_str = data
                 data = data.encode()
+            else:
+                data_str = data.decode('utf-8', errors='ignore')
+            
             self.serial.write(data)
+            
+            # Callback para datos enviados
+            try:
+                self.callback_queue.put_nowait(('send', data_str))
+            except queue.Full:
+                pass
 
     def write_line(self, text):
         if not text.endswith('\n'):
@@ -239,3 +267,4 @@ class GrblStreamer:
                 pass
 
         self.serial = None
+
