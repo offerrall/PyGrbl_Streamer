@@ -2,6 +2,7 @@ import serial
 import time
 import threading
 import queue
+import re
 
 class GrblStreamer:
 
@@ -40,6 +41,29 @@ class GrblStreamer:
     def receive_callback(self, data: str):
         """Callback for data received from GRBL, overridden by user."""
         pass
+
+    def clean_gcode_line(self, line):
+        """Clean and adjust a G-code line for hardware limitations."""
+        line = line.strip()
+        if not line:
+            return line
+        
+        if line.startswith(('G2 ', 'G3 ')):
+            i_match = re.search(r'I([-\d.]+)', line)
+            j_match = re.search(r'J([-\d.]+)', line)
+            
+            if i_match and j_match:
+                i_val = abs(float(i_match.group(1)))
+                j_val = abs(float(j_match.group(1)))
+                
+                if i_val > 50 or j_val > 50:
+                    x_match = re.search(r'X([-\d.]+)', line)
+                    y_match = re.search(r'Y([-\d.]+)', line)
+                    
+                    if x_match and y_match:
+                        return f"G1 X{x_match.group(1)} Y{y_match.group(1)}"
+        
+        return line
 
     def open(self):
 
@@ -211,7 +235,7 @@ class GrblStreamer:
             line = line.strip()
             
             if line:
-                commands.append(line)        
+                commands.append(self.clean_gcode_line(line))        
 
         grbl_buffer = 0
         BUFFER_SIZE = 127
@@ -267,4 +291,3 @@ class GrblStreamer:
                 pass
 
         self.serial = None
-
