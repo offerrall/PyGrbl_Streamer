@@ -143,7 +143,6 @@ class GrblStreamer:
                     line = buffer.strip()
                     buffer = ""
                     if line:
-                        # Callback para datos recibidos
                         try:
                             self.callback_queue.put_nowait(('receive', line))
                         except queue.Full:
@@ -203,7 +202,6 @@ class GrblStreamer:
             
             self.serial.write(data)
             
-            # Callback para datos enviados
             try:
                 self.callback_queue.put_nowait(('send', data_str))
             except queue.Full:
