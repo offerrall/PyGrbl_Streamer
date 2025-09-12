@@ -10,7 +10,7 @@ class GrblStreamer:
                  port: str = '/dev/Laser4',
                  baudrate: int = 115200,
                  convert_arcs: bool = False,
-                 arc_tolerance: float = 0.02):
+                 arc_tolerance: float = 0.01):
 
         self.port = port
         self.baudrate = baudrate
