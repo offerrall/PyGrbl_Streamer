@@ -1,6 +1,6 @@
 # pygrbl_streamer
 
-A simple and minimalist library for controlling CNC machines with GRBL firmware from Python. (~300 lines of code)
+A simple and minimalist library for controlling CNC machines with GRBL firmware from Python. (250 lines of code)
 
 ## Features
 
@@ -9,7 +9,6 @@ A simple and minimalist library for controlling CNC machines with GRBL firmware 
 - **Safe**: Intelligent GRBL buffer management and automatic alarm recovery
 - **Efficient**: Low CPU and memory consumption
 - **Flexible**: Callbacks for progress, alarms, and errors
-- **Arc conversion**: Optional G2/G3 to G1 conversion to avoid GRBL error:33
 
 ## Installation
 
@@ -25,16 +24,10 @@ pip install .
 ```python
 from pygrbl_streamer import GrblStreamer
 
-# Direct usage (standard mode)
+# Direct usage
 streamer = GrblStreamer('/dev/ttyUSB0')  # Or 'COM3' on Windows
 streamer.open()
 streamer.send_file('my_file.gcode') # or 'my_file.nc'
-streamer.close()
-
-# With arc conversion enabled
-streamer = GrblStreamer('/dev/ttyUSB0', convert_arcs=True, arc_tolerance=0.01)
-streamer.open()
-streamer.send_file('my_file.gcode')  # G2/G3 commands will be converted to G1
 streamer.close()
 ```
 
@@ -53,39 +46,18 @@ class MyStreamer(GrblStreamer):
     def error_callback(self, line: str):
         print(f"ERROR: {line}")
 
-# Enable arc conversion with custom tolerance
-streamer = MyStreamer('/dev/ttyUSB0', convert_arcs=True, arc_tolerance=0.02)
+streamer = MyStreamer('/dev/ttyUSB0')
 streamer.open()
 streamer.send_file('project.gcode')
 streamer.close()
 ```
 
-## Arc Conversion
-
-When `convert_arcs=True`, the library automatically converts circular interpolation commands (G2/G3) to linear movements (G1) to prevent GRBL error:33 on controllers that don't support arcs properly.
-
-**Benefits:**
-- Eliminates error:33 on arc-incompatible GRBL versions
-- Maintains geometric accuracy within specified tolerance
-- Preserves all other G-code commands (M, S, F, etc.)
-- Handles both I/J and R arc formats
-
-**Parameters:**
-- `convert_arcs`: Enable/disable arc conversion (default: False)
-- `arc_tolerance`: Maximum deviation from original arc in mm (default: 0.02)
-
 ## API Reference
 
 ### Constructor
 ```python
-GrblStreamer(port='/dev/Laser4', baudrate=115200, convert_arcs=False, arc_tolerance=0.02)
+GrblStreamer(port='/dev/Laser4', baudrate=115200)
 ```
-
-**Parameters:**
-- `port`: Serial port path
-- `baudrate`: Communication speed (default: 115200)
-- `convert_arcs`: Enable G2/G3 to G1 conversion (default: False)
-- `arc_tolerance`: Chord tolerance in mm for arc segmentation (default: 0.02)
 
 ### Main methods
 - `open()` - Opens serial connection and initializes GRBL
@@ -111,31 +83,14 @@ Executed when GRBL reports an error.
 
 ## Technical Features
 
-- **Intelligent buffer management**: Respects GRBL's 127-byte limit with optimistic sending strategy
+- **Intelligent buffer management**: Respects GRBL's 127-byte limit
 - **Automatic recovery**: Auto-recovery from alarms with `$X`
 - **Non-blocking threads**: Callbacks execute in separate threads
 - **Fault tolerant**: Callback errors do not affect machine control
 - **Automatic cleanup**: Daemon threads close automatically
-- **Arc conversion**: Uses separate `ArcToLinearConverter` module for clean architecture
-
-## Arc Conversion Details
-
-The arc conversion feature uses a dedicated module that:
-- Maintains modal state (G90/G91, G90.1/G91.1)
-- Tracks current position accurately
-- Segments arcs based on chord tolerance
-- Preserves feedrates and auxiliary commands
-- Handles both absolute and incremental positioning
-
-**Chord tolerance**: Maximum distance between the original arc and the segmented line approximation. Smaller values create smoother curves but more G1 commands.
 
 ## Slow callbacks
 Callbacks execute in separate threads, but if they are very slow they may accumulate events in the queue. The queue has a limit of 100 events and automatically discards if it fills up.
-
-## Dependencies
-
-- `pyserial` - For serial communication
-- `arc_to_linear_converter` - For G2/G3 conversion (included)
 
 ## Contributing
 
