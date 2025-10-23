@@ -106,30 +106,24 @@ class GrblStreamer:
 
     def _read_loop(self):
         buffer = ""
-        consecutive_errors = 0
-        max_errors = 10
 
         while self.running:
             try:
                 if self.serial and self.serial.is_open:
-                    char = self.serial.read(1)
+                    try:
+                        char = self.serial.read(1)
+                    except serial.SerialException as serial_error:
+                        print(f"Serial connection error: {serial_error}")
+                        try:
+                            self.callback_queue.put_nowait(('error', f"DEVICE_DISCONNECTED: {serial_error}"))
+                        except queue.Full:
+                            pass
+                        self.running = False
+                        break
+                    
                     if not char:
-                        consecutive_errors += 1
-                        if consecutive_errors == 1:
-                            print(f"Error in read loop: device reports readiness to read but returned no data")
-                        
-                        if consecutive_errors >= max_errors:
-                            try:
-                                self.callback_queue.put_nowait(('error', f"DEVICE_DISCONNECTED: Failed reads after {consecutive_errors} attempts"))
-                            except queue.Full:
-                                pass
-                            self.running = False
-                            break
-                        
-                        time.sleep(0.1)  # Evitar saturar CPU
                         continue
                     
-                    consecutive_errors = 0  # Reset contador si recibe datos
                     buffer += char.decode('utf-8', errors='ignore')
                     if not buffer.endswith('\n'):
                         continue
@@ -142,6 +136,7 @@ class GrblStreamer:
                             pass
                         
                         self._process_line(line)
+                        
             except Exception as e:
                 if self.running:
                     print(f"Error in read loop: {e}")
