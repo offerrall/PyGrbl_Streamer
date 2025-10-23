@@ -9,6 +9,7 @@ A simple and minimalist library for controlling CNC machines with GRBL firmware 
 - **Safe**: Intelligent GRBL buffer management and automatic alarm recovery
 - **Efficient**: Low CPU and memory consumption
 - **Flexible**: Callbacks for progress, alarms, and errors
+- **Auto-disconnect detection**: Automatically detects device disconnection and terminates cleanly
 
 ## Installation
 
@@ -44,6 +45,10 @@ class MyStreamer(GrblStreamer):
         print(f"ALARM: {line}")
     
     def error_callback(self, line: str):
+        if "DEVICE_DISCONNECTED" in line:
+            print(f"Device disconnected: {line}")
+            # Handle disconnection gracefully
+            return
         print(f"ERROR: {line}")
 
 streamer = MyStreamer('/dev/ttyUSB0')
@@ -78,8 +83,8 @@ Executed when GRBL reports an alarm.
 - `line`: Complete alarm line from GRBL
 
 #### `error_callback(line: str)`
-Executed when GRBL reports an error.
-- `line`: Complete error line from GRBL
+Executed when GRBL reports an error or device disconnection.
+- `line`: Complete error line from GRBL or "DEVICE_DISCONNECTED: ..." for disconnections
 
 ## Technical Features
 
@@ -88,6 +93,24 @@ Executed when GRBL reports an error.
 - **Non-blocking threads**: Callbacks execute in separate threads
 - **Fault tolerant**: Callback errors do not affect machine control
 - **Automatic cleanup**: Daemon threads close automatically
+- **Disconnect detection**: Detects device disconnection after 10 consecutive failed reads
+
+## Device Disconnection Handling
+
+The library automatically detects when a device is physically disconnected or powered off. After 10 consecutive failed read attempts, it will:
+
+1. Send a "DEVICE_DISCONNECTED" error to the `error_callback`
+2. Stop the read loop to prevent infinite error logging
+3. Allow for graceful cleanup in your application
+
+```python
+def error_callback(self, line: str):
+    if "DEVICE_DISCONNECTED" in line:
+        print("Device was disconnected - cleaning up...")
+        self.cleanup_and_exit()  # Your cleanup logic
+        return
+    # Handle other errors...
+```
 
 ## Slow callbacks
 Callbacks execute in separate threads, but if they are very slow they may accumulate events in the queue. The queue has a limit of 100 events and automatically discards if it fills up.
