@@ -78,6 +78,8 @@ class GrblStreamer:
             self.callback_thread.daemon = True
             self.callback_thread.start()
 
+            time.sleep(0.2)  # Dar tiempo a que los threads arranquen
+
             self._initialize_grbl()
 
         except serial.SerialException as e:
@@ -93,15 +95,31 @@ class GrblStreamer:
                 raise e
 
     def _initialize_grbl(self):
-        if True:
-            self.write(b'\x18')  # Ctrl-X
-            time.sleep(2)
-
-        if self.serial:
-            self.serial.reset_input_buffer()
-            self.serial.reset_output_buffer()
-
+        
+        self.write(b'\x18')
+        time.sleep(4)
+        
+        discarded = 0
+        timeout = time.time() + 5
+        
+        while time.time() < timeout:
+            try:
+                msg = self.read_queue.get(timeout=0.3)
+                discarded += 1
+            except queue.Empty:
+                break
+        
         self.write_line("$X")
+        
+        timeout = time.time() + 5
+        while time.time() < timeout:
+            try:
+                response = self.read_queue.get(timeout=1)
+                if response.strip().lower() == 'ok':
+                    break
+            except queue.Empty:
+                continue
+        
         time.sleep(0.5)
 
     def _read_loop(self):
