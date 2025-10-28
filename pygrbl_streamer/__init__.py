@@ -78,7 +78,7 @@ class GrblStreamer:
             self.callback_thread.daemon = True
             self.callback_thread.start()
 
-            time.sleep(0.2)  # Dar tiempo a que los threads arranquen
+            time.sleep(1)
 
             self._initialize_grbl()
 
