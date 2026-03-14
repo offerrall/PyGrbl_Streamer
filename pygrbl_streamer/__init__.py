@@ -225,26 +225,40 @@ class GrblStreamer:
 
     def send_file(self, file_path: str, completion_timeout: int = 300):
 
-        with open(file_path, 'r') as f:
-            lines = f.readlines()
+        def _count_commands(path: str) -> int:
+            count = 0
+            with open(path, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if ';' in line:
+                        line = line[:line.index(';')]
+                    if '(' in line:
+                        line = line[:line.index('(')]
+                    if line.strip():
+                        count += 1
+            return count
 
-        commands = []
-        for line in lines:
-            line = line.strip()
-            if ';' in line:
-                line = line[:line.index(';')]
-            if '(' in line:
-                line = line[:line.index('(')]
-            line = line.strip()
-            
-            if line:
-                commands.append(line)        
+        def _iter_commands(path: str):
+            with open(path, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if ';' in line:
+                        line = line[:line.index(';')]
+                    if '(' in line:
+                        line = line[:line.index('(')]
+                    line = line.strip()
+                    if line:
+                        yield line
+
+        total = _count_commands(file_path)
 
         grbl_buffer = 0
         BUFFER_SIZE = 127
         sent_commands = []
+        i = 0
 
-        for i, cmd in enumerate(commands, 1):
+        for cmd in _iter_commands(file_path):
+            i += 1
 
             while grbl_buffer + len(cmd) + 1 > BUFFER_SIZE - 5:
                 response = self.read_line_blocking()
@@ -255,13 +269,13 @@ class GrblStreamer:
                     if sent_commands:
                         sent_cmd = sent_commands.pop(0)
                         grbl_buffer -= (len(sent_cmd) + 1)
-    
+
             self.write_line(cmd)
             sent_commands.append(cmd)
             grbl_buffer += len(cmd) + 1
 
             if i % 10 == 0:
-                percent = int((i / len(commands)) * 100)
+                percent = int((i / total) * 100)
                 if percent == 100:
                     continue
                 try:
@@ -273,13 +287,13 @@ class GrblStreamer:
         while True:
             if time.time() - start_time > completion_timeout:
                 break
-                
+
             self.write_line("?")
             time.sleep(2)
             response = self.read_line_blocking()
             if response and 'Idle' in response:
                 break
-                
+
         self.progress_callback(100, 'completed')
 
     def close(self):

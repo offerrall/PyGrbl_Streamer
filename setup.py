@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(name="pygrbl_streamer",
-      version="1.0.0",
+      version="1.0.1",
       author="Beltrán Offerrall",
       packages=['pygrbl_streamer'],
       install_requires=["pyserial"],
