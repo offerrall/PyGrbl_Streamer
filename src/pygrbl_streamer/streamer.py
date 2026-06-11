@@ -1,3 +1,26 @@
+"""
+Robust GRBL G-code streamer.
+
+Features:
+    - Source-agnostic streaming: feed any iterable of commands (list,
+      generator, network stream...) via stream(); send_file() reads files
+      lazily with constant memory usage
+    - Zero-cost progress for files: percentage is derived from bytes
+      consumed (os.path.getsize), so even multi-GB jobs start instantly --
+      no counting pass over the file
+    - Deterministic recovery: the machine is the single source of truth.
+      sync() re-derives state from the device; reset() returns the session
+      to a known-good IDLE from any condition
+    - Clean connect/disconnect lifecycle (threads are joined, reads use timeouts)
+    - Physical-disconnection detection with a dedicated callback
+    - Exclusive port access: two processes can never share one machine
+    - Character-counting streaming protocol against GRBL's 128-byte RX buffer
+    - Strict separation of protocol acks (ok/error) from status reports (<...>),
+      alarms, and informational messages
+    - Real-time job control: pause (!), resume (~), stop (! + soft reset)
+    - Every blocking wait is bounded by a timeout; the streamer can never hang
+"""
+
 import os
 import serial
 import threading
@@ -363,7 +386,9 @@ class GrblStreamer:
     def command(self, cmd: str, timeout: float = 5.0) -> bool:
         """Send a single command and wait for its ok/error response.
         For interactive use outside of a streaming job."""
-        if self.state == State.STREAMING:
+        if self.state in (State.STREAMING, State.PAUSED):
+            # A paused job still owns the ack accounting; draining the
+            # queue here would corrupt it on resume.
             raise RuntimeError('A streaming job is in progress')
         self._drain(self._ack_queue)
         self.write_line(cmd)
@@ -374,7 +399,7 @@ class GrblStreamer:
 
     def unlock(self) -> bool:
         """$X: clear the alarm lock."""
-        if self.state == State.STREAMING:
+        if self.state in (State.STREAMING, State.PAUSED):
             # Draining the ack queue mid-job would corrupt buffer accounting.
             raise RuntimeError('A streaming job is in progress')
         self._drain(self._ack_queue)
@@ -584,6 +609,8 @@ class GrblStreamer:
                 while sum(pending) + need > max_len:
                     resp = self._wait_ack(ack_timeout)
                     if resp is None:
+                        if self._abort.is_set():
+                            break             # deliberate abort, not a timeout
                         raise TimeoutError('GRBL is not responding (ack timeout)')
                     if pending:
                         pending.popleft()
@@ -610,13 +637,20 @@ class GrblStreamer:
             while pending and not self._abort.is_set():
                 resp = self._wait_ack(ack_timeout)
                 if resp is None:
+                    if self._abort.is_set():
+                        break                 # deliberate abort, not a timeout
                     raise TimeoutError('GRBL stopped responding while finishing')
                 pending.popleft()
                 acked += 1
                 last_mark = self._report(acked, total, percent_fn, '', last_mark)
 
+            # An abort at ANY point (including during the final drain) means
+            # the job did not complete: never report a stopped job as done.
+            if self._abort.is_set():
+                ok = False
+
             # All commands acked; optionally wait for motion to finish
-            if ok and wait_for_idle and not self._abort.is_set():
+            if ok and wait_for_idle:
                 ok = self._wait_idle(completion_timeout)
 
         except (serial.SerialException, OSError) as e:
