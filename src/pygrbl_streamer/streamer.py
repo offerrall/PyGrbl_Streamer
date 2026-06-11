@@ -55,8 +55,9 @@ class GrblStreamer:
 
     _STATUS_RE = re.compile(r'^<(\w+)')
     _PAREN_COMMENT_RE = re.compile(r'\([^)]*\)')
+    _CRITICAL_EVENTS = frozenset(('alarm', 'error', 'disconnect', 'state'))
 
-    def __init__(self, port: str = '/dev/Laser4', baudrate: int = 115200,
+    def __init__(self, port: str, baudrate: int = 115200,
                  auto_unlock: bool = True):
         self.port = port
         self.baudrate = baudrate
@@ -103,7 +104,16 @@ class GrblStreamer:
     # Connection lifecycle
     # ------------------------------------------------------------------
     def connect(self, reset: bool = True):
-        """Open the serial port, start worker threads, and initialize GRBL."""
+        """
+        Open the serial port, start worker threads, and initialize GRBL.
+
+        Connecting IS taking control: by default the controller is
+        soft-reset (any orphaned job is stopped, beam off), verified to be
+        a responsive GRBL device, and optionally unlocked. Raises
+        SerialException if the port cannot be opened, is held by another
+        process, or the device does not respond. Never leaves a
+        half-initialized session behind.
+        """
         self.disconnect()  # guarantee a clean slate even if a session was open
         self._set_state(State.CONNECTING)
         try:
@@ -117,6 +127,8 @@ class GrblStreamer:
             s.write_timeout = 1.0
             s.dtr = False                     # suppress Arduino auto-reset on open
             s.rts = False
+            s.exclusive = True                # POSIX: fail if another process holds
+                                              # the port (Windows enforces this natively)
             s.open()
             s.reset_input_buffer()
             s.reset_output_buffer()
@@ -136,24 +148,46 @@ class GrblStreamer:
                                            name='grbl-callbacks')
         self._cb_thread.start()
 
-        if reset:
-            # Soft-reset and wait for the "Grbl X.Xx ['$' for help]" banner
-            # instead of sleeping blindly for a fixed interval.
-            self._banner.clear()
-            self._write(b'\x18')
-            if not self._banner.wait(timeout=6):
-                # Some GRBL clones do not emit a banner; proceed anyway.
-                self._emit('log', ('warning', 'No GRBL banner after soft reset'))
-            time.sleep(0.2)
-            self._drain(self._ack_queue)
+        try:
+            if reset:
+                # Soft-reset and wait for the "Grbl X.Xx ['$' for help]" banner
+                # instead of sleeping blindly for a fixed interval.
+                self._banner.clear()
+                self._write(b'\x18')
+                if not self._banner.wait(timeout=6):
+                    # Some GRBL clones do not emit a banner; proceed anyway.
+                    self._emit('log', ('warning', 'No GRBL banner after soft reset'))
+                time.sleep(0.2)
+                self._drain(self._ack_queue)
 
-        if self.auto_unlock:
-            self.unlock()
+            # Verify the device actually talks GRBL. Catches boards whose USB
+            # port enumerates while the machine is powered off, and non-GRBL
+            # devices on the wrong port: better to fail here than 30 s into a job.
+            if not self._banner.is_set():
+                t0 = time.time()
+                self.realtime(b'?')
+                while time.time() - t0 < 2.0:
+                    if self._banner.is_set() or self.last_status.get('time', 0) >= t0:
+                        break
+                    time.sleep(0.1)
+                else:
+                    raise serial.SerialException(
+                        'Port opened but device is not responding '
+                        '(machine powered off, or not a GRBL controller?)')
+
+            if self.auto_unlock:
+                self.unlock()
+        except (serial.SerialException, OSError):
+            # Initialization failed after the port opened: never leave
+            # threads running against a half-initialized session.
+            self.disconnect()
+            raise
 
         self._set_state(State.IDLE)
 
     def disconnect(self):
-        """Stop worker threads (joined, not abandoned) and close the port."""
+        """Stop worker threads (joined, not abandoned) and close the port.
+        Idempotent: safe to call at any time, in any state."""
         self._abort.set()
         self._running.clear()
 
@@ -254,6 +288,13 @@ class GrblStreamer:
 
         elif line.startswith('Grbl'):
             self._banner.set()
+            if self.state in (State.STREAMING, State.PAUSED) and not self._abort.is_set():
+                # The controller rebooted mid-job (brownout, EMI, watchdog):
+                # its buffer is gone and our accounting is void. Abort now
+                # instead of waiting for the 30 s ack timeout. (_abort guard:
+                # the reset triggered by stop() is expected, not an error.)
+                self._abort.set()
+                self._emit('error', 'CONTROLLER_RESET: GRBL rebooted mid-job')
         # [MSG:...], $N settings, etc. are still delivered via receive_callback.
 
     def _handle_disconnect(self, reason: str):
@@ -333,6 +374,9 @@ class GrblStreamer:
 
     def unlock(self) -> bool:
         """$X: clear the alarm lock."""
+        if self.state == State.STREAMING:
+            # Draining the ack queue mid-job would corrupt buffer accounting.
+            raise RuntimeError('A streaming job is in progress')
         self._drain(self._ack_queue)
         self.write_line('$X')
         try:
@@ -377,6 +421,91 @@ class GrblStreamer:
         # A soft reset during motion leaves GRBL in an alarm state by design.
         if self.state is not State.DISCONNECTED:
             self._set_state(State.ALARM)
+
+    # ------------------------------------------------------------------
+    # Deterministic recovery: the machine is the single source of truth
+    # ------------------------------------------------------------------
+    def sync(self, timeout: float = 2.0) -> State:
+        """
+        Re-derive the session state from the device itself, overriding any
+        internal bookkeeping. Sends a real-time '?' and maps the fresh
+        status report onto State.
+
+        Mapping: Alarm/Hold/Door -> ALARM (a held machine needs an explicit
+        reset(); blindly resuming motion on a remote laser is unsafe);
+        anything else (Idle/Run/Jog/Home/...) -> IDLE. While a stream()
+        owns the session, the current state is returned untouched.
+
+        If the device does not answer within timeout, the session is torn
+        down (disconnect_callback fires) and DISCONNECTED is returned.
+        Never raises: the return value IS the truth, whatever happened.
+        """
+        if not (self.serial and self.serial.is_open):
+            return State.DISCONNECTED
+        if self.state in (State.STREAMING, State.PAUSED):
+            return self.state
+
+        t0 = time.time()
+        try:
+            self.realtime(b'?')
+        except (serial.SerialException, OSError) as e:
+            self._handle_disconnect(f'DEVICE_DISCONNECTED: {e}')
+            return State.DISCONNECTED
+
+        while time.time() - t0 < timeout:
+            if self.last_status.get('time', 0) >= t0:
+                st = self.last_status['state']
+                if st in ('Alarm', 'Hold', 'Door'):
+                    self._set_state(State.ALARM)
+                else:
+                    self._set_state(State.IDLE)
+                return self.state
+            time.sleep(0.05)
+
+        self._handle_disconnect('DEVICE_UNRESPONSIVE: no status report')
+        return State.DISCONNECTED
+
+    def reset(self, unlock: bool = True) -> bool:
+        """
+        Deterministic recovery: bring the session to a known-good IDLE from
+        ANY condition -- mid-job, alarm, feed hold, or plain unknown.
+
+        Sequence: abort any running stream, soft-reset the controller
+        (flushes its buffer and planner), drain stale acks, optionally
+        unlock, then sync() against the device. Idempotent: call it
+        whenever in doubt, as many times as you like.
+
+        Returns True if the session ended in IDLE. False means the device
+        is unreachable (disconnect_callback fired): escalate to reconnect().
+        Never raises and never leaves the session half-initialized.
+        """
+        if not (self.serial and self.serial.is_open):
+            return False
+
+        # Abort any running stream and wait for its thread to release the job
+        self._abort.set()
+        self._paused.clear()
+        deadline = time.time() + 2.0
+        while self.state in (State.STREAMING, State.PAUSED) and time.time() < deadline:
+            time.sleep(0.05)
+
+        try:
+            self._banner.clear()
+            self.realtime(b'\x18')
+            self._banner.wait(timeout=4.0)
+            time.sleep(0.2)
+            self._drain(self._ack_queue)
+            if unlock:
+                self.write_line('$X')
+                try:
+                    self._ack_queue.get(timeout=3)
+                except queue.Empty:
+                    pass
+        except (serial.SerialException, OSError) as e:
+            self._handle_disconnect(f'DEVICE_DISCONNECTED: {e}')
+            return False
+
+        return self.sync() == State.IDLE
 
     # ------------------------------------------------------------------
     # Streaming core (character-counting protocol)
@@ -597,8 +726,15 @@ class GrblStreamer:
         self._emit('state', st)
 
     def _emit(self, etype: str, data):
-        """Queue an event for the callback thread; drop it if the queue is full."""
+        """Queue an event for the callback thread. Low-value events (raw
+        traffic, progress) are dropped if the queue is full; safety-relevant
+        events evict the oldest item instead — they are never lost."""
         try:
             self._event_queue.put_nowait((etype, data))
         except queue.Full:
-            pass
+            if etype in self._CRITICAL_EVENTS:
+                try:
+                    self._event_queue.get_nowait()
+                    self._event_queue.put_nowait((etype, data))
+                except (queue.Empty, queue.Full):
+                    pass
