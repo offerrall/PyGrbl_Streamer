@@ -19,9 +19,6 @@ dependencies = [
     "pyserial>=3.5",
 ]
 
-[project.optional-dependencies]
-test = ["pytest>=8.0"]
-
 [project.urls]
 Homepage = "https://github.com/offerrall/PyGrbl_Streamer"
 Repository = "https://github.com/offerrall/PyGrbl_Streamer"
