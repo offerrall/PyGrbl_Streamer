@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=77.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pygrbl_streamer"
+version = "0.0.1"
+description = "Thread-safe, fault-tolerant G-code streamer for GRBL controllers."
+readme = "readme.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Beltrán Offerrall" },
+]
+keywords = ["grbl", "gcode", "cnc", "laser", "serial", "streaming"]
+
+dependencies = [
+    "pyserial>=3.5",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[project.urls]
+Homepage = "https://github.com/offerrall/PyGrbl_Streamer"
+Repository = "https://github.com/offerrall/PyGrbl_Streamer"
+Issues = "https://github.com/offerrall/PyGrbl_Streamer/issues"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["pygrbl_streamer"]
+
+[tool.setuptools.package-data]
+pygrbl_streamer = ["py.typed"]

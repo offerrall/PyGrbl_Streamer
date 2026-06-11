@@ -1,124 +1,159 @@
-# pygrbl_streamer
+# PyGrbl_Streamer
 
-A simple and minimalist library for controlling CNC machines with GRBL firmware from Python. (250 lines of code)
+Robust, source-agnostic G-code streamer for GRBL controllers over serial.
+
+> **v0.0.1** — Complete rewrite. The API is not compatible with previous internal versions and may change before 0.1.0.
 
 ## Features
 
-- **Simple**: Just inherit the class and override the callbacks you need
-- **Non-blocking**: Callbacks execute in separate threads without affecting laser control
-- **Safe**: Intelligent GRBL buffer management and automatic alarm recovery
-- **Efficient**: Low CPU and memory consumption
-- **Flexible**: Callbacks for progress, alarms, and errors
-- **Auto-disconnect detection**: Automatically detects device disconnection and terminates cleanly
+- Stream from any source: lists, generators, files, network — `stream()` accepts any iterable of commands
+- Constant memory and instant start: files of any size are read lazily in a single pass — no preloading, no counting pass
+- Zero-cost progress: file progress is derived from bytes consumed vs file size, accurate to within a few commands
+- Character-counting streaming protocol against GRBL's 128-byte RX buffer
+- Clean connect/disconnect lifecycle — threads are joined, nothing hangs
+- Physical disconnection detection with automatic reconnect support
+- Real-time job control: pause, resume, stop
+- Event callbacks for progress, state changes, alarms, errors, raw I/O, and internal diagnostics
+- Every blocking wait is bounded by a timeout
+- Lightweight: runs multiple machines concurrently on a Raspberry Pi
 
 ## Installation
 
 ```bash
-git clone https://github.com/offerrall/pygrbl_streamer.git
-cd pygrbl_streamer
-pip install .
+pip install pygrbl_streamer
 ```
 
-## Basic Usage
+Requires Python 3.10+ and `pyserial`.
 
-### Simple example
+## Quick start
+
 ```python
 from pygrbl_streamer import GrblStreamer
 
-# Direct usage
-streamer = GrblStreamer('/dev/ttyUSB0')  # Or 'COM3' on Windows
-streamer.open()
-streamer.send_file('my_file.gcode') # or 'my_file.nc'
-streamer.close()
+g = GrblStreamer(port='/dev/ttyUSB0')  # 'COM3' on Windows
+g.progress_callback = lambda pct, cmd: print(f'{pct}%')
+
+g.connect()
+g.send_file('job.gcode')   # any size, constant memory, starts instantly
+g.disconnect()
 ```
 
-### With custom callbacks
-```python
-from pygrbl_streamer import GrblStreamer
+## Streaming from any source
 
-class MyStreamer(GrblStreamer):
-    
-    def progress_callback(self, percent: int, command: str):
-        print(f"Progress: {percent}% - {command}")
-    
-    def alarm_callback(self, line: str):
-        print(f"ALARM: {line}")
-    
-    def error_callback(self, line: str):
-        if "DEVICE_DISCONNECTED" in line:
-            print(f"Device disconnected: {line}")
-            # Handle disconnection gracefully
-            return
-        print(f"ERROR: {line}")
-
-streamer = MyStreamer('/dev/ttyUSB0')
-streamer.open()
-streamer.send_file('project.gcode')
-streamer.close()
-```
-
-## API Reference
-
-### Constructor
-```python
-GrblStreamer(port='/dev/Laser4', baudrate=115200)
-```
-
-### Main methods
-- `open()` - Opens serial connection and initializes GRBL
-- `send_file(filename)` - Sends a G-code file to the machine
-- `close()` - Closes connection and cleans up resources
-- `write_line(text)` - Sends an individual command to GRBL
-- `read_line_blocking()` - Reads a response from GRBL (5s timeout)
-
-### Callbacks (override as needed)
-
-#### `progress_callback(percent: int, command: str)`
-Executed every 10 commands during file sending.
-- `percent`: Completion percentage (0-100)
-- `command`: Last command sent
-
-#### `alarm_callback(line: str)`
-Executed when GRBL reports an alarm.
-- `line`: Complete alarm line from GRBL
-
-#### `error_callback(line: str)`
-Executed when GRBL reports an error or device disconnection.
-- `line`: Complete error line from GRBL or "DEVICE_DISCONNECTED: ..." for disconnections
-
-## Technical Features
-
-- **Intelligent buffer management**: Respects GRBL's 127-byte limit
-- **Automatic recovery**: Auto-recovery from alarms with `$X`
-- **Non-blocking threads**: Callbacks execute in separate threads
-- **Fault tolerant**: Callback errors do not affect machine control
-- **Automatic cleanup**: Daemon threads close automatically
-- **Disconnect detection**: Detects device disconnection after 10 consecutive failed reads
-
-## Device Disconnection Handling
-
-The library automatically detects when a device is physically disconnected or powered off. After 10 consecutive failed read attempts, it will:
-
-1. Send a "DEVICE_DISCONNECTED" error to the `error_callback`
-2. Stop the read loop to prevent infinite error logging
-3. Allow for graceful cleanup in your application
+`stream()` consumes commands lazily from any iterable. Your application decides where the G-code comes from:
 
 ```python
-def error_callback(self, line: str):
-    if "DEVICE_DISCONNECTED" in line:
-        print("Device was disconnected - cleaning up...")
-        self.cleanup_and_exit()  # Your cleanup logic
-        return
-    # Handle other errors...
+def square(size=10, power=300, feed=1000):
+    yield 'G90 G21'
+    yield f'M4 S{power}'
+    yield f'G1 X{size} F{feed}'
+    yield f'G1 Y{size}'
+    yield 'G1 X0'
+    yield 'G1 Y0'
+    yield 'M5'
+
+g.stream(square(), total=7)
 ```
 
-## Slow callbacks
-Callbacks execute in separate threads, but if they are very slow they may accumulate events in the queue. The queue has a limit of 100 events and automatically discards if it fills up.
+Chain chunks back-to-back without stopping the machine between them:
 
-## Contributing
+```python
+g.stream(chunk_1, wait_for_idle=False)
+g.stream(chunk_2, wait_for_idle=False)
+g.stream(final_chunk)   # only the last chunk waits for Idle
+```
 
-Found a bug or want to add a feature? Pull requests welcome!
+## Progress reporting
+
+`progress_callback(percent, command)` fires on *acknowledged* commands. The percentage source, in order of precedence:
+
+1. **Source-provided** — if your iterable exposes a `percent()` method returning 0–100, it is the authority. `send_file()` uses this internally (bytes read vs file size).
+2. **`total`** — pass the command count to `stream()` for exact 0–100%.
+3. **Heartbeat** — with neither, the callback fires every 100 acked commands with `percent=-1`.
+
+## Job control
+
+Streaming calls are blocking. Run them in a thread to control the job from elsewhere:
+
+```python
+import threading
+
+threading.Thread(target=g.send_file, args=('job.gcode',)).start()
+
+g.pause()   # immediate feed hold (!)
+g.resume()  # cycle start (~)
+g.stop()    # abort: feed hold + soft reset
+```
+
+## API overview
+
+| Method | Description |
+|---|---|
+| `connect()` / `disconnect()` | open/close the session; safe to call repeatedly |
+| `stream(commands, total=None, ...)` | stream any iterable of commands |
+| `send_file(path, ...)` | stream a file lazily; same options as `stream()` |
+| `command(cmd)` | send one command interactively, wait for ok/error |
+| `pause()` / `resume()` / `stop()` | real-time job control |
+| `unlock()` / `home()` | `$X` / `$H` |
+| `reconnect(retries, delay)` | retry loop after a physical disconnect |
+
+## Callbacks
+
+Assign as attributes or override in a subclass. All callbacks run on a dedicated thread and can never block serial communication. If one of your callbacks raises, the exception is reported through `log_callback` instead of being silently swallowed.
+
+| Callback | Signature | Fires on |
+|---|---|---|
+| `progress_callback` | `(percent, command)` | acknowledged command progress (`-1` for unbounded streams) |
+| `state_callback` | `(state)` | state machine transitions |
+| `alarm_callback` | `(line)` | GRBL `ALARM:n` |
+| `error_callback` | `(line)` | GRBL `error:n` or internal errors |
+| `send_callback` / `receive_callback` | `(data)` | raw serial traffic |
+| `disconnect_callback` | `(reason)` | physical disconnection |
+| `log_callback` | `(level, message)` | internal diagnostics (`'debug'`/`'info'`/`'warning'`) |
+
+### Logging integration
+
+The library imposes no logging framework. Wire the callbacks to Python's standard `logging` in your application:
+
+```python
+import logging
+log = logging.getLogger('laser1')
+
+g.log_callback = lambda lv, m: getattr(log, lv)(m)
+g.error_callback = lambda l: log.warning('GRBL error: %s', l)
+g.alarm_callback = lambda l: log.error('ALARM: %s', l)
+g.disconnect_callback = lambda r: log.critical('disconnected: %s', r)
+g.receive_callback = lambda l: log.debug('<< %s', l)
+g.send_callback = lambda d: log.debug('>> %s', d.strip())
+```
+
+## States
+
+`DISCONNECTED → CONNECTING → IDLE ⇄ STREAMING ⇄ PAUSED`, plus `ALARM`.
+
+An alarm aborts the running job and is **never cleared automatically** — call `unlock()` explicitly. After `stop()`, machine position is untrusted: run `home()` before the next job.
+
+## Compatibility
+
+Works with any GRBL 1.1 (or compatible, e.g. grblHAL) controller: diode laser engravers, CNC routers, pen plotters, drag-knife cutters.
+
+Not supported: Ruida-based CO2 lasers, galvo fiber lasers (EZCad/BJJCZ controllers — entirely different protocol), and Marlin-based machines (no character-counting buffer or real-time commands).
+
+I use this library daily in production, driving several lasers concurrently from a Raspberry Pi 4. Tested so far on:
+
+- Acmer P1S
+- Acmer P2
+- Longer Ray5 20W
+- AtomStack A24 Pro
+
+Reports of it working (or not) on other machines are welcome via issues.
+
+## Safety notes
+
+- Laser users: verify `$32=1` (laser mode) so the beam is disabled during feed hold.
+- Commands longer than GRBL's RX buffer (127 chars) are skipped with an error event instead of deadlocking the stream.
+- This library streams G-code; it does not validate it. Garbage in, garbage out.
 
 ## License
 
-MIT License - use the library freely in commercial and personal projects.
+MIT
