@@ -150,6 +150,9 @@ I use this library daily in production, driving several lasers concurrently from
 - Acmer P2
 - Longer Ray5 20W
 - AtomStack A24 Pro
+- AtomStack Atelier — a diode **galvo** running GRBL (unlike the gantry machines above)
+
+The Atelier streams identically to the rest, with one current caveat: the machine ships locked and, for now, has to be connected once through LightBurn or lasergrbl to get unlocked before pygrbl_streamer can connect and drive it normally — the same unlock step lasergrbl performs on its own first connection. Reproducing that unlock handshake directly from the library is a work in progress.
 
 Reports of it working (or not) on other machines are welcome via issues.
 
