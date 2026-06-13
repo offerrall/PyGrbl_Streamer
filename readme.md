@@ -25,7 +25,7 @@ Companion to [`pygrbl_build`](https://github.com/offerrall/pygrbl_build)
 ## Installation
 
 ```bash
-pip install pygrbl_streamer
+pip install pygrbl-streamer
 ```
 
 Requires Python 3.10+ and `pyserial`.
