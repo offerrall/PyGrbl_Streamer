@@ -19,6 +19,14 @@ Features:
       alarms, and informational messages
     - Real-time job control: pause (!), resume (~), stop (! + soft reset)
     - Every blocking wait is bounded by a timeout; the streamer can never hang
+
+Note: '?' status polling is NOT performed during streaming. Polling mid-job
+can let a status report interleave with an 'ok' in the serial stream, causing
+the acknowledgement to be miscounted and the flow control to stall until the
+ack timeout fires (a false "GRBL is not responding"). Flow control needs only
+the ack stream, and file progress is byte-based, so no '?' is sent while
+commands are being streamed. Status IS polled in _wait_idle once every command
+has been acknowledged -- safe, because no 'ok' can interleave there.
 """
 
 import os
@@ -73,7 +81,6 @@ class GrblStreamer:
 
     RX_BUFFER = 128          # GRBL serial RX buffer size, in characters
     RX_MARGIN = 1            # safety margin kept free in the RX buffer
-    STATUS_INTERVAL = 0.3    # '?' status polling period while streaming (s)
     READ_TIMEOUT = 0.1       # serial read timeout; keeps the reader thread responsive (s)
 
     _STATUS_RE = re.compile(r'^<(\w+)')
@@ -564,6 +571,11 @@ class GrblStreamer:
 
         Returns True on successful completion. Blocking: run it in its own
         thread if the UI must stay responsive.
+
+        No '?' is polled while commands are streamed: doing so can let a
+        status report interleave with an 'ok' and desync the ack accounting,
+        stalling until ack_timeout (a false disconnect). Flow control needs
+        only the ack stream; progress is byte-based.
         """
         if self.state != State.IDLE:
             raise RuntimeError(f'Cannot stream while in state {self.state.name}')
@@ -581,7 +593,6 @@ class GrblStreamer:
 
         pending = deque()                     # byte counts of commands currently in GRBL's buffer
         acked = 0
-        last_poll = 0.0
         last_mark = -1 if (percent_fn or total) else 0
         max_len = self.RX_BUFFER - self.RX_MARGIN
         ok = True
@@ -626,12 +637,6 @@ class GrblStreamer:
 
                 self.write_line(cmd)
                 pending.append(need)
-
-                # Real-time '?' status polling (consumes no RX buffer space)
-                now = time.time()
-                if now - last_poll > self.STATUS_INTERVAL:
-                    self.realtime(b'?')
-                    last_poll = now
 
             # Drain the remaining acknowledgements
             while pending and not self._abort.is_set():
@@ -706,7 +711,10 @@ class GrblStreamer:
         return None
 
     def _wait_idle(self, timeout: float) -> bool:
-        """Poll status until GRBL reports Idle (job physically complete)."""
+        """Poll status until GRBL reports Idle (job physically complete).
+
+        Safe to poll '?' here: every command has been acknowledged, so no
+        'ok' can interleave with these status requests."""
         deadline = time.time() + timeout
         while time.time() < deadline:
             if self._abort.is_set() or self.state == State.DISCONNECTED:
