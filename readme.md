@@ -5,7 +5,7 @@
 Robust, source-agnostic G-code streamer for GRBL controllers over serial.
 
 Part of the **pygrbl** family, a set of libraries to manage GRBL.
-Companion to [`pygrbl_build`](https://github.com/offerrall/pygrbl_build)
+Companion to [`pygrbl_build`](https://github.com/offerrall/pygrbl_build) and [`pygrbl_server`](https://github.com/offerrall/pygrbl-server)
 
 > **v0.0.1** — Complete rewrite. The API is not compatible with previous internal versions and may change before 0.1.0.
 
