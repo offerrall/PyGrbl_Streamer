@@ -284,8 +284,11 @@ class GrblStreamer:
             try:
                 # Read whatever is available (at least 1 byte). Avoids the
                 # up-to-100 ms latency of waiting for a fixed-size block.
-                chunk = self.serial.read(self.serial.in_waiting or 1)
-            except (serial.SerialException, OSError, AttributeError) as e:
+                serial_port = self.serial
+                if serial_port is None:
+                    return
+                chunk = serial_port.read(serial_port.in_waiting or 1)
+            except (serial.SerialException, OSError, AttributeError, TypeError) as e:
                 # Port vanished (USB unplugged, power loss, etc.)
                 self._handle_disconnect(f'DEVICE_DISCONNECTED: {e}')
                 return
