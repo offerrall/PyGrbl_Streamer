@@ -88,9 +88,16 @@ class GrblStreamer:
     _CRITICAL_EVENTS = frozenset(('alarm', 'error', 'disconnect', 'state'))
 
     def __init__(self, port: str, baudrate: int = 115200,
-                 auto_unlock: bool = True):
+                 auto_unlock: bool = True, rx_buffer_size: int = RX_BUFFER):
+        if isinstance(rx_buffer_size, bool) or not isinstance(rx_buffer_size, int):
+            raise TypeError("rx_buffer_size must be int")
+        if rx_buffer_size <= self.RX_MARGIN:
+            raise ValueError(
+                f"rx_buffer_size must be greater than {self.RX_MARGIN}"
+            )
         self.port = port
         self.baudrate = baudrate
+        self.rx_buffer_size = rx_buffer_size
         # Send $X after connecting. Never applied mid-job: auto-unlocking a
         # laser/CNC in the middle of a program is a safety hazard.
         self.auto_unlock = auto_unlock
@@ -594,7 +601,7 @@ class GrblStreamer:
         pending = deque()                     # byte counts of commands currently in GRBL's buffer
         acked = 0
         last_mark = -1 if (percent_fn or total) else 0
-        max_len = self.RX_BUFFER - self.RX_MARGIN
+        max_len = self.rx_buffer_size - self.RX_MARGIN
         ok = True
 
         try:

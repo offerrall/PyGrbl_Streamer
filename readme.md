@@ -1,4 +1,4 @@
-# PyGrbl_Streamer 0.0.1
+# PyGrbl_Streamer 0.2.0
 
 [![PyPI](https://img.shields.io/pypi/v/pygrbl_streamer.svg)](https://pypi.org/project/pygrbl_streamer/)
 
@@ -14,7 +14,8 @@ Companion to [`pygrbl_build`](https://github.com/offerrall/pygrbl_build) and [`p
 - Stream from any source: lists, generators, files, network — `stream()` accepts any iterable of commands
 - Constant memory and instant start: files of any size are read lazily in a single pass — no preloading, no counting pass
 - Zero-cost progress: file progress is derived from bytes consumed vs file size, accurate to within a few commands
-- Character-counting streaming protocol against GRBL's 128-byte RX buffer
+- Character-counting streaming protocol with a configurable RX buffer and a
+  conservative 128-byte default
 - Clean connect/disconnect lifecycle — threads are joined, nothing hangs
 - Physical disconnection detection with automatic reconnect support
 - Real-time job control: pause, resume, stop
@@ -159,9 +160,16 @@ Reports of it working (or not) on other machines are welcome via issues.
 ## Safety notes
 
 - Laser users: verify `$32=1` (laser mode) so the beam is disabled during feed hold.
-- Commands longer than GRBL's RX buffer (127 chars) are skipped with an error event instead of deadlocking the stream.
+- Commands larger than the configured GRBL RX capacity are skipped with an
+  error event instead of deadlocking the stream.
 - This library streams G-code; it does not validate it. Garbage in, garbage out.
 
 ## License
 
 MIT
+Controllers with a larger receive buffer can configure it per connection while
+the standard GRBL-safe default remains 128 bytes:
+
+```python
+laser = GrblStreamer("/dev/ttyUSB0", 460800, rx_buffer_size=4096)
+```
