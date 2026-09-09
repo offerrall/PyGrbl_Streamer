@@ -173,3 +173,24 @@ the standard GRBL-safe default remains 128 bytes:
 ```python
 laser = GrblStreamer("/dev/ttyUSB0", 460800, rx_buffer_size=4096)
 ```
+
+## Publishing to PyPI
+
+`.github/workflows/build.yml` builds and tests on pushes to `main` (excluding
+documentation-only changes), on published GitHub releases, and on manual runs.
+Only **Actions → Build distributions → Run workflow → main** publishes to PyPI,
+after all required jobs succeed. Pushes and releases only create CI artifacts.
+
+Before publishing a new version, update `version` in `pyproject.toml`.
+The workflow does not increment versions or skip existing PyPI files.
+
+One-time setup: create the `pypi-release` GitHub environment and add a GitHub
+Trusted Publisher in the PyPI project's Publishing settings with:
+
+- Owner: `offerrall`
+- Repository: `PyGrbl_Streamer`
+- Workflow filename: `build.yml`
+- Environment: `pypi-release`
+
+Authentication uses OIDC (`id-token: write`); no PyPI API token secret is needed.
+See [PyPI's Trusted Publisher setup](https://docs.pypi.org/trusted-publishers/adding-a-publisher/).
