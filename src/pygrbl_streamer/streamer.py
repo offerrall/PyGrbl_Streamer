@@ -30,6 +30,7 @@ has been acknowledged -- safe, because no 'ok' can interleave there.
 """
 
 import os
+import math
 import serial
 import threading
 import queue
@@ -88,7 +89,9 @@ class GrblStreamer:
     _CRITICAL_EVENTS = frozenset(('alarm', 'error', 'disconnect', 'state'))
 
     def __init__(self, port: str, baudrate: int = 115200,
-                 auto_unlock: bool = True, rx_buffer_size: int = RX_BUFFER):
+                 auto_unlock: bool = True, rx_buffer_size: int = RX_BUFFER, *,
+                 dtr: bool = False, rts: bool = False,
+                 init_commands: Iterable[str] = (), init_timeout: float = 3.0):
         if isinstance(rx_buffer_size, bool) or not isinstance(rx_buffer_size, int):
             raise TypeError("rx_buffer_size must be int")
         if rx_buffer_size <= self.RX_MARGIN:
@@ -101,6 +104,20 @@ class GrblStreamer:
         # Send $X after connecting. Never applied mid-job: auto-unlocking a
         # laser/CNC in the middle of a program is a safety hazard.
         self.auto_unlock = auto_unlock
+        if not isinstance(dtr, bool) or not isinstance(rts, bool):
+            raise TypeError('dtr and rts must be bool')
+        if isinstance(init_commands, (str, bytes)):
+            raise TypeError('init_commands must be an iterable of command strings')
+        commands = tuple(init_commands)
+        for command in commands:
+            if not isinstance(command, str):
+                raise TypeError('each initialization command must be str')
+            if not command.strip() or not command.isascii() or not command.isprintable():
+                raise ValueError('initialization commands must be nonempty single ASCII lines')
+        self._validate_seconds('init_timeout', init_timeout, positive=True)
+        self.dtr, self.rts = dtr, rts
+        self.init_commands = commands
+        self.init_timeout = init_timeout
 
         self.serial: serial.Serial | None = None
         self.state = State.DISCONNECTED
@@ -140,7 +157,8 @@ class GrblStreamer:
     # ------------------------------------------------------------------
     # Connection lifecycle
     # ------------------------------------------------------------------
-    def connect(self, reset: bool = True):
+    def connect(self, reset: bool = True, *, attempts: int = 1,
+                retry_delay: float = 2.0, status_timeout: float = 2.0):
         """
         Open the serial port, start worker threads, and initialize GRBL.
 
@@ -149,12 +167,37 @@ class GrblStreamer:
         a responsive GRBL device, and optionally unlocked. Raises
         SerialException if the port cannot be opened, is held by another
         process, or the device does not respond. Never leaves a
-        half-initialized session behind.
+        half-initialized session behind. Optional initialization commands run
+        after the reset (if enabled), before status verification. They must be
+        idempotent connection handshakes: each attempt repeats them, never a
+        previously submitted homing cycle or job. With initialization commands,
+        a fresh status is required even if the controller sends a banner.
         """
+        if isinstance(attempts, bool) or not isinstance(attempts, int):
+            raise TypeError('attempts must be int')
+        if attempts < 1:
+            raise ValueError('attempts must be at least 1')
+        self._validate_seconds('retry_delay', retry_delay)
+        self._validate_seconds('status_timeout', status_timeout, positive=True)
+        for attempt in range(attempts):
+            try:
+                self._connect_once(reset, status_timeout)
+                return
+            except BaseException as error:
+                self.disconnect()
+                if (not isinstance(error, (serial.SerialException, OSError))
+                        or attempt + 1 == attempts):
+                    raise
+                time.sleep(retry_delay)
+
+    def _connect_once(self, reset: bool, status_timeout: float):
         self.disconnect()  # guarantee a clean slate even if a session was open
+        self._banner.clear()
+        self.last_status = {}
         self._set_state(State.CONNECTING)
         try:
             s = serial.Serial()
+            self.serial = s  # cleanup must also own ports whose setup/open fails
             s.port = self.port
             s.baudrate = self.baudrate
             s.bytesize = serial.EIGHTBITS
@@ -162,17 +205,15 @@ class GrblStreamer:
             s.stopbits = serial.STOPBITS_ONE
             s.timeout = self.READ_TIMEOUT     # bounded reads -> reader thread can exit
             s.write_timeout = 1.0
-            s.dtr = False                     # suppress Arduino auto-reset on open
-            s.rts = False
+            s.dtr = self.dtr
+            s.rts = self.rts
             s.exclusive = True                # POSIX: fail if another process holds
                                               # the port (Windows enforces this natively)
             s.open()
             s.reset_input_buffer()
             s.reset_output_buffer()
-            self.serial = s
         except (serial.SerialException, OSError):
-            self.serial = None
-            self._set_state(State.DISCONNECTED)
+            self.disconnect()
             raise
 
         self._abort.clear()
@@ -197,20 +238,35 @@ class GrblStreamer:
                 time.sleep(0.2)
                 self._drain(self._ack_queue)
 
+            for command in self.init_commands:
+                if not self.command(command, timeout=self.init_timeout):
+                    raise serial.SerialException(
+                        f'Initialization command was not acknowledged: {command!r}')
+
             # Verify the device actually talks GRBL. Catches boards whose USB
             # port enumerates while the machine is powered off, and non-GRBL
             # devices on the wrong port: better to fail here than 30 s into a job.
-            if not self._banner.is_set():
+            if self.init_commands or not self._banner.is_set():
                 t0 = time.time()
+                deadline = time.monotonic() + status_timeout
                 self.realtime(b'?')
-                while time.time() - t0 < 2.0:
-                    if self._banner.is_set() or self.last_status.get('time', 0) >= t0:
+                while time.monotonic() < deadline:
+                    if (self.last_status.get('time', 0) >= t0
+                            or (not self.init_commands and self._banner.is_set())):
                         break
                     time.sleep(0.1)
                 else:
                     raise serial.SerialException(
                         'Port opened but device is not responding '
                         '(machine powered off, or not a GRBL controller?)')
+
+            if self.init_commands:
+                # The optional handshake must not turn an active machine into
+                # an apparently idle session or clear its alarm implicitly.
+                status = self.last_status.get('state')
+                if status not in ('Idle', 'Alarm', 'Hold', 'Door'):
+                    raise serial.SerialException(f'Controller is not ready: {status}')
+                self._set_state(State.IDLE if status == 'Idle' else State.ALARM)
 
             if self.auto_unlock:
                 self.unlock()
@@ -220,7 +276,8 @@ class GrblStreamer:
             self.disconnect()
             raise
 
-        self._set_state(State.IDLE)
+        if not self.init_commands:
+            self._set_state(State.IDLE)
 
     def disconnect(self):
         """Stop worker threads (joined, not abandoned) and close the port.
@@ -242,9 +299,13 @@ class GrblStreamer:
             try:
                 self.serial.reset_output_buffer()
                 self.serial.reset_input_buffer()
-                self.serial.close()
             except Exception:
                 pass
+            finally:
+                try:
+                    self.serial.close()
+                except Exception:
+                    pass
         self.serial = None
 
         self._drain(self._ack_queue)
@@ -252,11 +313,12 @@ class GrblStreamer:
         with self._state_lock:
             self.state = State.DISCONNECTED
 
-    def reconnect(self, retries: int = 5, delay: float = 2.0) -> bool:
+    def reconnect(self, retries: int = 5, delay: float = 2.0, *,
+                  reset: bool = True) -> bool:
         """Attempt to reconnect. Intended for use after a physical disconnect."""
         for _ in range(retries):
             try:
-                self.connect()
+                self.connect(reset=reset)
                 return True
             except (serial.SerialException, OSError):
                 time.sleep(delay)
@@ -429,9 +491,33 @@ class GrblStreamer:
             self._set_state(State.IDLE)
         return ok
 
-    def home(self, timeout: float = 60.0) -> bool:
-        """$H: run the homing cycle (may take a while)."""
-        return self.command('$H', timeout=timeout)
+    def home(self, timeout: float = 60.0, *, wait_idle: bool = False) -> bool:
+        """Send $H once. Optionally require a fresh Idle after its acknowledgement.
+
+        With wait_idle=True, timeout covers both acknowledgement and physical
+        completion. Alarm, stop, disconnect or timeout returns False; there is
+        no automatic retry, reset or unlock. False does not itself stop motion.
+        """
+        if not wait_idle:
+            return self.command('$H', timeout=timeout)
+        self._validate_seconds('timeout', timeout, positive=True)
+        if self.state in (State.STREAMING, State.PAUSED):
+            raise RuntimeError('A streaming job is in progress')
+        self._abort.clear()  # homing is allowed to recover a previous alarm
+        self._drain(self._ack_queue)
+        deadline = time.monotonic() + timeout
+        try:
+            self.write_line('$H')
+        except (serial.SerialException, OSError) as error:
+            self._handle_disconnect(f'DEVICE_DISCONNECTED: {error}')
+            return False
+        if self._wait_ack(max(0, deadline - time.monotonic())) != 'ok':
+            return False
+        completed = self._wait_idle(
+            max(0, deadline - time.monotonic()), since=time.time())
+        if completed:
+            self._set_state(State.IDLE)
+        return completed
 
     # ------------------------------------------------------------------
     # Job control
@@ -710,37 +796,49 @@ class GrblStreamer:
     def _wait_ack(self, timeout: float) -> str | None:
         """Wait for one 'ok'/'error:N' with a hard timeout.
         Abortable and sensitive to disconnection; never hangs."""
-        deadline = time.time() + timeout
-        while time.time() < deadline:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
             if self._abort.is_set() or self.state == State.DISCONNECTED:
                 return None
             try:
-                return self._ack_queue.get(timeout=0.2)
+                return self._ack_queue.get(
+                    timeout=min(0.2, max(0, deadline - time.monotonic())))
             except queue.Empty:
                 continue
         return None
 
-    def _wait_idle(self, timeout: float) -> bool:
+    def _wait_idle(self, timeout: float, *, since: float | None = None) -> bool:
         """Poll status until GRBL reports Idle (job physically complete).
 
         Safe to poll '?' here: every command has been acknowledged, so no
         'ok' can interleave with these status requests."""
-        deadline = time.time() + timeout
-        while time.time() < deadline:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
             if self._abort.is_set() or self.state == State.DISCONNECTED:
                 return False
             try:
                 self.realtime(b'?')
             except (serial.SerialException, OSError):
                 return False
-            time.sleep(0.4)
+            time.sleep(min(0.4, max(0, deadline - time.monotonic())))
+            if self._abort.is_set() or self.state == State.DISCONNECTED:
+                return False
             st = self.last_status.get('state', '')
             fresh = time.time() - self.last_status.get('time', 0) < 2.0
+            if since is not None:
+                fresh = fresh and self.last_status.get('time', 0) >= since
             if fresh and st == 'Idle':
                 return True
             if fresh and st.startswith('Alarm'):
                 return False
         return False
+
+    @staticmethod
+    def _validate_seconds(name: str, value: float, *, positive: bool = False):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise TypeError(f'{name} must be a number')
+        if not math.isfinite(value) or value < 0 or (positive and value == 0):
+            raise ValueError(f'{name} must be finite and {"positive" if positive else "nonnegative"}')
 
     def _report(self, acked: int, total: int | None, percent_fn,
                 cmd: str, last_mark: int) -> int:

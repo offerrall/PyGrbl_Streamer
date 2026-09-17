@@ -55,7 +55,7 @@ jobs:
   publish_to_pypi:
     name: Publish to PyPI
     needs: [build]
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'release' && github.event.action == 'published'
     runs-on: ubuntu-latest
     environment: pypi-release
     permissions:
