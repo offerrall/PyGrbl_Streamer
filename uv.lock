@@ -61,7 +61,7 @@ wheels = [
 
 [[package]]
 name = "pygrbl-streamer"
-version = "1.0.1"
+version = "1.0.2"
 source = { editable = "." }
 dependencies = [
     { name = "pyserial" },

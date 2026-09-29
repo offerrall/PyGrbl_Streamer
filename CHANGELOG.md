@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.0.2
+
+### Changed
+
+- Metadata only: the distribution name is spelled `pygrbl-streamer`, PyPI's
+  canonical form, in `pyproject.toml` and the documentation.
+  `pip install pygrbl-streamer` and `import pygrbl_streamer` are unchanged; the
+  code is the same as 1.0.1.
+
 ## 1.0.1
 
 ### Changed

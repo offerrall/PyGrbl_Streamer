@@ -1,4 +1,4 @@
-# pygrbl_streamer
+# pygrbl-streamer
 
 [![PyPI](https://img.shields.io/pypi/v/pygrbl_streamer.svg)](https://pypi.org/project/pygrbl_streamer/)
 
@@ -10,7 +10,7 @@ Used daily for a year in a professional workshop, operating multiple machines
 in production.
 
 Requires Python 3.10+. Part of the **pygrbl** family alongside
-[`pygrbl_build`](https://github.com/offerrall/pygrbl_build).
+[`pygrbl-build`](https://github.com/offerrall/pygrbl_build).
 
 ## Install
 
