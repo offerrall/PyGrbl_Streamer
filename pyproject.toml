@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pygrbl-streamer"
-version = "1.0.4"
+version = "1.0.5"
 description = "Stream G-code to GRBL controllers over serial, with progress, pause/resume/stop and configurable connections."
 readme = "README.md"
 requires-python = ">=3.10"

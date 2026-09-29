@@ -22,12 +22,6 @@ The Swift's serial handshake and homing sequence (the
 standalone script, not through this library's API. Swift engraving,
 pause/resume and its receive-buffer capacity are unverified.
 
-## Errors during the final drain
-
-`stop_on_error=True` does not check GRBL error responses received while the
-last acknowledgements drain at the end of a stream. Those errors still reach
-`error_callback`.
-
 ## No job resumption
 
 A stopped, alarmed or disconnected job cannot be continued. `stop()` and

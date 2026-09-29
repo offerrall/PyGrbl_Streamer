@@ -743,6 +743,8 @@ class GrblStreamer:
                     raise TimeoutError('GRBL stopped responding while finishing')
                 pending.popleft()
                 acked += 1
+                if resp != 'ok' and stop_on_error:
+                    self._abort.set()
                 last_mark = self._report(acked, total, percent_fn, '', last_mark)
 
             # An abort at ANY point (including during the final drain) means

@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.0.5 - 2026-09-29
+
+### Fixed
+
+- `stream(..., stop_on_error=True)` now rejects GRBL errors received while
+  draining the final acknowledgements, including single-command jobs. It
+  returns `False` without waiting for Idle or reporting successful completion,
+  just as it does for errors received while waiting for buffer space.
+- Error callbacks and the default `stop_on_error=False` behavior are unchanged.
+
 ## 1.0.4 - 2026-09-29
 
 ### Changed

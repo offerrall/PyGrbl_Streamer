@@ -62,9 +62,11 @@ then does not confirm physical completion. The final chunk should wait for Idle.
 
 Oversized commands produce an error event. By default they are skipped;
 `stop_on_error=True` aborts on an oversized command and on errors received
-while waiting for room in the receive buffer (see
-[Limitations](limitations.md#errors-during-the-final-drain) for the errors it
-does not cover). Applications should also consume `error_callback`; the
+while waiting for room in the receive buffer or draining the final
+acknowledgements. It returns `False` without waiting for Idle or emitting the
+`completed` progress event. Commands already buffered by the controller may
+still run; this policy does not send a feed hold or reset. Applications should
+also consume `error_callback`; with the default `stop_on_error=False`, the
 boolean return alone does not prove that every command was accepted.
 
 Invalid streaming state raises `RuntimeError`; stream failures can return
