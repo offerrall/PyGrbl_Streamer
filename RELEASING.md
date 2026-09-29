@@ -1,6 +1,6 @@
 # Versioning and publishing
 
-[Back to README](../README.md)
+[Back to README](README.md)
 
 `.github/workflows/build.yml` builds and tests on pushes to `main` (excluding
 documentation-only changes), on published GitHub releases, and on manual runs.
@@ -10,8 +10,8 @@ Saving a draft release does not publish; publishing a prerelease also triggers
 the workflow.
 
 Before publishing a new version, update `version` in `pyproject.toml`,
-`__version__` in `src/pygrbl_streamer/__init__.py`, the README version and
-`CHANGELOG.md`; refresh `uv.lock` with `uv lock`.
+`__version__` in `src/pygrbl_streamer/__init__.py` and `CHANGELOG.md`;
+refresh `uv.lock` with `uv lock`.
 The workflow does not increment versions or skip existing PyPI files.
 
 To publish 1.0.0:

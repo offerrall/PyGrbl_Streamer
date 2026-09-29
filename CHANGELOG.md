@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.0.1
+
+### Changed
+
+- Documentation only: shorter page titles in the README, the README title without
+  the version, and the release notes for maintainers moved from `docs/` to
+  `RELEASING.md`.
+
 ## 1.0.0
 
 ### Added

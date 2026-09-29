@@ -1,4 +1,4 @@
-# PyGrbl_Streamer 1.0.0
+# pygrbl_streamer
 
 [![PyPI](https://img.shields.io/pypi/v/pygrbl_streamer.svg)](https://pypi.org/project/pygrbl_streamer/)
 
@@ -35,10 +35,10 @@ new connection options are optional.
 
 ## Documentation
 
-- [Connections, retries and controller compatibility](docs/connections.md)
-- [Streaming, progress and job control](docs/streaming.md)
-- [API, callbacks and state](docs/api.md)
-- [Versioning and publishing](docs/publishing.md)
+- [Connections](docs/connections.md): serial settings, retries and controller compatibility.
+- [Streaming](docs/streaming.md): sending files and generators, progress, pause, resume and stop.
+- [API](docs/api.md): the class, its callbacks and its state.
 - [Changelog](CHANGELOG.md)
+- [Versioning and publishing](RELEASING.md)
 
 MIT — see [LICENSE](LICENSE).
