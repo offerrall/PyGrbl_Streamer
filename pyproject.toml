@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pygrbl-streamer"
-version = "1.0.2"
-description = "Thread-safe, fault-tolerant G-code streamer for GRBL controllers."
+version = "1.0.3"
+description = "Stream G-code to GRBL controllers over serial, with progress, pause/resume/stop and configurable connections."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -14,6 +14,14 @@ authors = [
     { name = "Beltrán Offerrall" },
 ]
 keywords = ["grbl", "gcode", "cnc", "laser", "serial", "streaming"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
 
 dependencies = [
     "pyserial>=3.5",
@@ -26,9 +34,11 @@ dev = ["pytest>=8,<10"]
 testpaths = ["tests"]
 
 [project.urls]
-Homepage = "https://github.com/offerrall/PyGrbl_Streamer"
+Homepage = "https://offerrall.github.io/pygrbl-streamer/"
+Documentation = "https://offerrall.github.io/pygrbl-streamer/"
 Repository = "https://github.com/offerrall/PyGrbl_Streamer"
 Issues = "https://github.com/offerrall/PyGrbl_Streamer/issues"
+Changelog = "https://github.com/offerrall/PyGrbl_Streamer/blob/main/CHANGELOG.md"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

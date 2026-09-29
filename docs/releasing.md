@@ -1,6 +1,4 @@
-# Versioning and publishing
-
-[Back to README](README.md)
+# Releasing
 
 `.github/workflows/build.yml` builds and tests on pushes to `main` (excluding
 documentation-only changes), on published GitHub releases, and on manual runs.
@@ -14,11 +12,11 @@ Before publishing a new version, update `version` in `pyproject.toml`,
 refresh `uv.lock` with `uv lock`.
 The workflow does not increment versions or skip existing PyPI files.
 
-To publish 1.0.0:
+To publish version X.Y.Z:
 
-1. Commit and push the version changes and workflow to `main`.
+1. Commit and push the version changes to `main`.
 2. In GitHub, open **Releases → Draft a new release**.
-3. Create the tag `v1.0.0` on the commit containing those changes.
+3. Create the tag `vX.Y.Z` on the commit containing those changes.
 4. Click **Publish release**. Follow the build and publication in **Actions**.
 
 The package version comes from `pyproject.toml`, not the tag or release title.
@@ -35,7 +33,4 @@ Trusted Publisher in the PyPI project's Publishing settings with:
 Authentication uses OIDC (`id-token: write`); no PyPI API token secret is needed.
 See [PyPI's Trusted Publisher setup](https://docs.pypi.org/trusted-publishers/adding-a-publisher/).
 
-
-The 1.x public API keeps existing calls compatible. Add controller-specific
-behavior through optional arguments with existing defaults preserved. A
-breaking public API change requires a new major version.
+Public API changes follow the [compatibility policy](overview.md#compatibility-policy).

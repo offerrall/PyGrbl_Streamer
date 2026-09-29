@@ -1,6 +1,6 @@
-# API, callbacks and state
+# API
 
-[Back to README](../README.md)
+The package exports `GrblStreamer` and `State`.
 
 ## Methods
 
@@ -16,11 +16,16 @@
 | `sync(timeout=2)` | query the controller and update local state |
 | `reset(unlock=True)` | soft reset, optionally unlock, then synchronize |
 
-See [connection options and homing](connections.md) and [streaming options](streaming.md) for parameters and failure handling.
+Parameters and failure handling are on [Connections](connections.md) and
+[Streaming](streaming.md).
 
 ## Callbacks
 
-Assign as attributes or override in a subclass. Callbacks run on a dedicated dispatcher thread. Keep them short: a slow callback delays later callbacks, although serial reading continues separately. If one of your callbacks raises, the exception is reported through `log_callback` instead of being silently swallowed.
+Assign callbacks as attributes or override them in a subclass. They run on a
+dedicated dispatcher thread. Keep them short: a slow callback delays later
+callbacks, although serial reading continues separately. If a callback raises,
+the exception is reported through `log_callback` instead of being silently
+swallowed.
 
 | Callback | Signature | Fires on |
 |---|---|---|
@@ -34,18 +39,23 @@ Assign as attributes or override in a subclass. Callbacks run on a dedicated dis
 
 ### Logging integration
 
-The library imposes no logging framework. Wire the callbacks to Python's standard `logging` in your application:
+The library imposes no logging framework. Wire the callbacks to Python's
+standard `logging` in the application:
 
 ```python
 import logging
-log = logging.getLogger('laser1')
 
-g.log_callback = lambda lv, m: getattr(log, lv)(m)
-g.error_callback = lambda l: log.warning('GRBL error: %s', l)
-g.alarm_callback = lambda l: log.error('ALARM: %s', l)
-g.disconnect_callback = lambda r: log.critical('disconnected: %s', r)
-g.receive_callback = lambda l: log.debug('<< %s', l)
-g.send_callback = lambda d: log.debug('>> %s', d.strip())
+from pygrbl_streamer import GrblStreamer
+
+log = logging.getLogger('laser1')
+laser = GrblStreamer("/dev/ttyUSB0")
+
+laser.log_callback = lambda level, message: getattr(log, level)(message)
+laser.error_callback = lambda line: log.warning('GRBL error: %s', line)
+laser.alarm_callback = lambda line: log.error('ALARM: %s', line)
+laser.disconnect_callback = lambda reason: log.critical('disconnected: %s', reason)
+laser.receive_callback = lambda line: log.debug('<< %s', line)
+laser.send_callback = lambda data: log.debug('>> %s', data.strip())
 ```
 
 ## State and recovery
@@ -67,23 +77,23 @@ physical motion has finished.
 querying. On an unresponsive controller it reports disconnection. Use the raw
 status when the distinction between physically idle and moving matters.
 
-An `ALARM` message aborts a running stream; it is not automatically cleared
+An `ALARM` message aborts a running stream; it is never automatically cleared
 mid-job. `unlock()` explicitly sends `$X`. The default `connect()` and
-`reset(unlock=True)` also request unlock, as part of their startup/recovery
+`reset(unlock=True)` also request unlock, as part of their startup and recovery
 sequence. Set `auto_unlock=False` for a connection that must preserve alarms.
 
 `reset()` aborts streaming, sends a soft reset and synchronizes after optional
-unlock. Its boolean result reflects the mapped local state, not restored
-position or a resumable job. Homing is separate; see `home(wait_idle=True)` in
-[connections](connections.md) for acknowledgement plus fresh-Idle confirmation.
+unlock. Its boolean result reflects the mapped local state, not a restored
+position or a resumable job. Homing is separate; see
+[Homing](connections.md#homing) for acknowledgement plus fresh-Idle
+confirmation.
 
-## Diagnostics
+## Troubleshooting
 
 - No connection: check port ownership, baud rate, DTR/RTS and the initialization
   sequence. Log received lines and connection errors before changing options.
 - Connected but unable to stream: inspect local state and `last_status`; do not
   clear an alarm solely to suppress an error message.
-- Homing returns `False`: inspect alarm/error callbacks and distinguish missing
-  acknowledgement from missing final Idle. It does not retry or stop itself.
-- Interrupted job: reconnecting establishes a new session, not continuation of
-  the old motion. Decide recovery in the application.
+- Homing returns `False`: inspect alarm and error callbacks and distinguish a
+  missing acknowledgement from a missing final Idle. It does not retry or stop
+  itself.

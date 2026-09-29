@@ -2,7 +2,26 @@
 
 All notable changes to this project are documented in this file.
 
-## 1.0.2
+## 1.0.3 - 2026-09-29
+
+### Changed
+
+- Documentation only: the README becomes a short entrance to the documentation
+  site at https://offerrall.github.io/pygrbl-streamer/, and `docs/overview.md`
+  holds the introduction: supported controllers, tested machines, safety and the
+  compatibility policy.
+- New `docs/limitations.md` gathers the unsupported controllers, the AtomStack
+  Atelier and Swift caveats, the final-drain error gap and job resumption.
+- `RELEASING.md` moves to `docs/releasing.md`, with generic release steps.
+- Every example uses `laser` and imports what it needs; the pages describe the
+  current behavior without references to earlier versions, and the default
+  connection and lazy streaming are each described once.
+- `pyproject.toml`: a Documentation URL, Homepage pointing to the documentation
+  site, a Changelog URL, Python 3.10 to 3.14 classifiers and a description that
+  matches the README.
+- The code is the same as 1.0.2.
+
+## 1.0.2 - 2026-09-29
 
 ### Changed
 
@@ -11,7 +30,7 @@ All notable changes to this project are documented in this file.
   `pip install pygrbl-streamer` and `import pygrbl_streamer` are unchanged; the
   code is the same as 1.0.1.
 
-## 1.0.1
+## 1.0.1 - 2026-09-29
 
 ### Changed
 
@@ -19,7 +38,7 @@ All notable changes to this project are documented in this file.
   the version, and the release notes for maintainers moved from `docs/` to
   `RELEASING.md`.
 
-## 1.0.0
+## 1.0.0 - 2026-09-17
 
 ### Added
 
@@ -37,7 +56,7 @@ All notable changes to this project are documented in this file.
 - Always attempt to close the serial port even when setup or buffer cleanup
   fails; failed connection attempts and interrupts release the session.
 
-## 0.2.0 - 2026-09-04
+## 0.2.0 - 2026-09-09
 
 ### Added
 

@@ -1,24 +1,10 @@
 # pygrbl-streamer
 
-[![PyPI](https://img.shields.io/pypi/v/pygrbl_streamer.svg)](https://pypi.org/project/pygrbl_streamer/)
-
 Stream G-code to GRBL controllers over serial, with progress callbacks,
 pause/resume/stop and configurable connections. Files and generators are
-consumed lazily, keeping memory use low.
+consumed lazily, so a job of any size streams in constant memory.
 
-Used daily for a year in a professional workshop, operating multiple machines
-in production.
-
-Requires Python 3.10+. Part of the **pygrbl** family alongside
-[`pygrbl-build`](https://github.com/offerrall/pygrbl_build).
-
-## Install
-
-```bash
-pip install pygrbl-streamer
-```
-
-## Use
+Used daily in a professional workshop, driving several machines in production.
 
 ```python
 from pygrbl_streamer import GrblStreamer
@@ -29,16 +15,16 @@ with GrblStreamer("/dev/ttyUSB0") as laser:  # "COM3" on Windows
         raise RuntimeError("Job did not complete")
 ```
 
-This executes the file on the machine. Default connection: 115200 baud,
-soft reset and automatic unlock. Existing 0.2.0 calls remain supported;
-new connection options are optional.
+The full documentation is at https://offerrall.github.io/pygrbl-streamer/.
 
 ## Documentation
 
-- [Connections](docs/connections.md): serial settings, retries and controller compatibility.
-- [Streaming](docs/streaming.md): sending files and generators, progress, pause, resume and stop.
-- [API](docs/api.md): the class, its callbacks and its state.
-- [Changelog](CHANGELOG.md)
-- [Versioning and publishing](RELEASING.md)
+- [Overview](docs/overview.md): supported controllers, tested machines, safety and the compatibility policy.
+- [Connections](docs/connections.md): serial settings, handshakes, homing, retries and receive-buffer size.
+- [Streaming](docs/streaming.md): files and generators, progress, flow control, pause, resume and stop.
+- [API](docs/api.md): methods, callbacks, logging, state and troubleshooting.
+- [Limitations](docs/limitations.md): unsupported controllers, machine caveats and recovery boundaries.
 
-MIT — see [LICENSE](LICENSE).
+### Maintaining
+
+- [Releasing](docs/releasing.md): CI, PyPI trusted publishing and the release steps.
